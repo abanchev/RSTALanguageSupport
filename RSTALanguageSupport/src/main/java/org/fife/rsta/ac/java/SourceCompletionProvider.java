@@ -552,6 +552,14 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 
 		// Do a final sort of all of our completions and we're good to go!
 		completions = new ArrayList<>(set);
+
+		// If in annotation context (@), filter to only annotation types
+		boolean annotationContext = isAnnotationContext(comp, text);
+		if (annotationContext) {
+			completions.removeIf(c -> !(c instanceof ClassCompletion) ||
+									   !((ClassCompletion) c).isAnnotationType());
+		}
+
 		Collections.sort(completions);
 
 		// Only match based on stuff after the final '.', since that's what is
@@ -603,6 +611,25 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 public SourceLocation getSourceLocForClass(String className) {
 	return jarManager.getSourceLocForClass(className);
 }
+
+	/**
+	 * Checks if the character immediately before the already-entered text
+	 * is '@', indicating an annotation context.
+	 */
+	private boolean isAnnotationContext(JTextComponent comp, String alreadyEntered) {
+		try {
+			int caret = comp.getCaretPosition();
+			int textStart = caret - alreadyEntered.length();
+			if (textStart > 0) {
+				String prev = comp.getDocument().getText(textStart - 1, 1);
+				return prev.charAt(0) == '@';
+			}
+		} catch (BadLocationException e) {
+			// ignore
+		}
+		return false;
+	}
+
 
 	/**
 	 * Returns whether a method defined by a super class is accessible to

@@ -103,6 +103,19 @@ class SourceCompletionProviderTest {
 		assertEquals(2, SourceCompletionProvider.countArguments("(bar(x, y), z)"));
 	}
 
+	// --- annotation prefix tests ---
+
+	@Test
+	void testAnnotationPrefix() {
+		// @ is not a Java identifier part, so it should NOT be included
+		assertEquals("Serialize", getEnteredText("@Serialize"));
+	}
+
+	@Test
+	void testAnnotationPrefixPartial() {
+		assertEquals("Ser", getEnteredText("@Ser"));
+	}
+
 	@Test
 	void testCountArguments_malformed() {
 		assertEquals(-1, SourceCompletionProvider.countArguments(null));
