@@ -29,6 +29,7 @@ import javax.swing.text.JTextComponent;
 import org.fife.rsta.ac.ShorthandCompletionCache;
 import org.fife.rsta.ac.java.buildpath.LibraryInfo;
 import org.fife.rsta.ac.java.buildpath.SourceLocation;
+import org.fife.rsta.ac.java.classreader.AccessFlags;
 import org.fife.rsta.ac.java.classreader.ClassFile;
 import org.fife.rsta.ac.java.classreader.FieldInfo;
 import org.fife.rsta.ac.java.classreader.MemberInfo;
@@ -259,6 +260,93 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 	 */
 	public void setShorthandCache(ShorthandCompletionCache shorthandCache) {
 		this.shorthandCache = shorthandCache;
+	}
+
+
+	/**
+	 * Adds completions for annotation element parameters when the caret
+	 * is inside an annotation's parentheses (e.g. {@code @Serialize(nam|)}).
+	 *
+	 * @param set The set to add completions to.
+	 * @param cu The compilation unit being parsed.
+	 * @param annotationClassName The simple name of the annotation type.
+	 * @return {@code true} if annotation completions were added (caller
+	 *         should return them directly), {@code false} if not in
+	 *         annotation context.
+	 * @since 3.3.0
+	 */
+	private boolean addAnnotationElementCompletions(Set<Completion> set,
+			CompilationUnit cu, String annotationClassName) {
+
+		ClassFile cf = getClassFileFor(cu, annotationClassName);
+		if (cf == null ||
+				(cf.getAccessFlags() & AccessFlags.ACC_ANNOTATION) == 0) {
+			return false;
+		}
+
+		// Add annotation element methods as completions
+		int methodCount = cf.getMethodCount();
+		for (int i=0; i<methodCount; i++) {
+			MethodInfo method = cf.getMethodInfo(i);
+			String name = method.getName();
+
+			// Skip synthetic methods and inherited Object/Annotation methods
+			if (name.startsWith("<") || name.equals("values") ||
+					name.equals("valueOf") || name.equals("hashCode") ||
+					name.equals("toString") || name.equals("annotationType") ||
+					name.equals("equals")) {
+				continue;
+			}
+
+			// Display shows "name" but insertion produces "name="
+			BasicCompletion bc = new BasicCompletion(this, name + "=") {
+				@Override
+				public String getInputText() {
+					return name;
+				}
+			};
+			bc.setShortDescription(method.getReturnTypeString(false));
+
+			// Build summary from source Javadoc if available
+			SourceLocation loc = getSourceLocForClass(
+					cf.getClassName(true));
+			if (loc != null) {
+				CompilationUnit annotCu =
+						Util.getCompilationUnitFromDisk(loc, cf);
+				if (annotCu != null) {
+					Iterator<TypeDeclaration> tdi =
+							annotCu.getTypeDeclarationIterator();
+					while (tdi.hasNext()) {
+						TypeDeclaration td = tdi.next();
+						if (td.getName().equals(
+								cf.getClassName(false))) {
+							Iterator<Member> members =
+									td.getMemberIterator();
+							while (members.hasNext()) {
+								Member m = members.next();
+								if (m instanceof Method &&
+										((Method) m).getName()
+												.equals(name)) {
+									String doc =
+											((Method) m).getDocComment();
+									if (doc != null &&
+											doc.startsWith("/**")) {
+										bc.setSummary(Util
+												.docCommentToHtml(doc));
+									}
+									break;
+								}
+							}
+							break;
+						}
+					}
+				}
+			}
+
+			set.add(bc);
+		}
+
+		return !set.isEmpty();
 	}
 
 
@@ -527,58 +615,26 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		// Check for annotation parameter context: @Annotation(param|
 		String annotationClassName = getAnnotationClassName(comp);
 		if (annotationClassName != null && text.indexOf('.') == -1) {
-			ClassFile annotationCf = getClassFileFor(cu, annotationClassName);
-			if (annotationCf != null && (annotationCf.getAccessFlags() &
-					org.fife.rsta.ac.java.classreader.AccessFlags.ACC_ANNOTATION) != 0) {
-				// Add annotation element methods as completions
-				for (int mi = 0; mi < annotationCf.getMethodCount(); mi++) {
-					MethodInfo method = annotationCf.getMethodInfo(mi);
-					String name = method.getName();
-					// Skip synthetic methods and inherited Object/Annotation methods
-					if (name.startsWith("<") || name.equals("values") ||
-						name.equals("valueOf") || name.equals("hashCode") ||
-						name.equals("toString") || name.equals("annotationType") ||
-						name.equals("equals")) continue;
-					// Create a simple text completion for each annotation element
-					BasicCompletion bc = new BasicCompletion(this, name + "=");
-					bc.setShortDescription(method.getReturnTypeString(false));
-					// Build summary from source Javadoc if available
-					SourceLocation loc = getSourceLocForClass(annotationCf.getClassName(true));
-					if (loc != null) {
-						CompilationUnit annotCu = Util.getCompilationUnitFromDisk(loc, annotationCf);
-						if (annotCu != null) {
-							Iterator<TypeDeclaration> tdi = annotCu.getTypeDeclarationIterator();
-							while (tdi.hasNext()) {
-								TypeDeclaration td = tdi.next();
-								if (td.getName().equals(annotationCf.getClassName(false))) {
-									Iterator<Member> members = td.getMemberIterator();
-									while (members.hasNext()) {
-										Member m = members.next();
-										if (m instanceof Method && ((Method) m).getName().equals(name)) {
-											String doc = ((Method) m).getDocComment();
-											if (doc != null && doc.startsWith("/**")) {
-												bc.setSummary(Util.docCommentToHtml(doc));
-											}
-											break;
-										}
-									}
-									break;
-								}
-							}
-						}
-					}
-					set.add(bc);
-				}
-				// Return only annotation element completions
+			if (addAnnotationElementCompletions(set, cu,
+					annotationClassName)) {
 				completions = new ArrayList<>(set);
 				Collections.sort(completions);
 				text = text.substring(text.lastIndexOf('.') + 1);
 				@SuppressWarnings("unchecked")
-				int startIdx = Collections.binarySearch(completions, text, comparator);
-				if (startIdx < 0) startIdx = -(startIdx + 1);
-				else { while (startIdx > 0 && comparator.compare(completions.get(startIdx-1), text) == 0) startIdx--; }
+				int startIdx = Collections.binarySearch(completions,
+						text, comparator);
+				if (startIdx < 0) {
+					startIdx = -(startIdx + 1);
+				}
+				else {
+					while (startIdx > 0 && comparator.compare(
+							completions.get(startIdx - 1), text) == 0) {
+						startIdx--;
+					}
+				}
 				@SuppressWarnings("unchecked")
-				int endIdx = Collections.binarySearch(completions, text + '{', comparator);
+				int endIdx = Collections.binarySearch(completions,
+						text + '{', comparator);
 				endIdx = -(endIdx + 1);
 				return completions.subList(startIdx, endIdx);
 			}
@@ -617,8 +673,14 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		// If in annotation context (@), filter to only annotation types
 		boolean annotationContext = isAnnotationContext(comp, text);
 		if (annotationContext) {
-			completions.removeIf(c -> !(c instanceof ClassCompletion) ||
-									   !((ClassCompletion) c).isAnnotationType());
+			Iterator<Completion> it = completions.iterator();
+			while (it.hasNext()) {
+				Completion c = it.next();
+				if (!(c instanceof ClassCompletion) ||
+						!((ClassCompletion) c).isAnnotationType()) {
+					it.remove();
+				}
+			}
 		}
 
 		Collections.sort(completions);
@@ -669,23 +731,34 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 
 
 
-public SourceLocation getSourceLocForClass(String className) {
-	return jarManager.getSourceLocForClass(className);
-}
+	/**
+	 * Returns the source location for the specified class, if available.
+	 *
+	 * @param className The fully qualified class name.
+	 * @return The source location, or {@code null} if not found.
+	 * @since 3.3.0
+	 */
+	public SourceLocation getSourceLocForClass(String className) {
+		return jarManager.getSourceLocForClass(className);
+	}
+
 
 	/**
 	 * Checks if the character immediately before the already-entered text
 	 * is '@', indicating an annotation context.
 	 */
-	private boolean isAnnotationContext(JTextComponent comp, String alreadyEntered) {
+	private boolean isAnnotationContext(JTextComponent comp,
+			String alreadyEntered) {
 		try {
 			int caret = comp.getCaretPosition();
 			int textStart = caret - alreadyEntered.length();
 			if (textStart > 0) {
-				String prev = comp.getDocument().getText(textStart - 1, 1);
+				String prev = comp.getDocument().getText(
+						textStart - 1, 1);
 				return prev.charAt(0) == '@';
 			}
-		} catch (BadLocationException e) {
+		}
+		catch (BadLocationException e) {
 			// ignore
 		}
 		return false;
@@ -704,7 +777,8 @@ public SourceLocation getSourceLocForClass(String className) {
 			javax.swing.text.Element root = doc.getDefaultRootElement();
 			// Scan up to 3 lines back (annotation params may span lines)
 			int lineIdx = root.getElementIndex(caret);
-			int scanStart = root.getElement(Math.max(0, lineIdx - 3)).getStartOffset();
+			int scanStart = root.getElement(
+					Math.max(0, lineIdx - 3)).getStartOffset();
 			String text = doc.getText(scanStart, caret - scanStart);
 
 			// Find unmatched '(' scanning backward
@@ -713,32 +787,49 @@ public SourceLocation getSourceLocForClass(String className) {
 			int parenPos = -1;
 			while (i >= 0) {
 				char c = text.charAt(i);
-				if (c == ')') depth++;
+				if (c == ')') {
+					depth++;
+				}
 				else if (c == '(') {
-					if (depth == 0) { parenPos = i; break; }
+					if (depth == 0) {
+						parenPos = i;
+						break;
+					}
 					depth--;
 				}
 				i--;
 			}
-			if (parenPos < 0) return null;
+			if (parenPos < 0) {
+				return null;
+			}
 
 			// Extract identifier before '('
 			int nameEnd = parenPos;
 			int nameStart = nameEnd - 1;
-			while (nameStart >= 0 && Character.isJavaIdentifierPart(text.charAt(nameStart))) {
+			while (nameStart >= 0 &&
+					Character.isJavaIdentifierPart(
+							text.charAt(nameStart))) {
 				nameStart--;
 			}
 			nameStart++;
-			if (nameStart >= nameEnd) return null;
+			if (nameStart >= nameEnd) {
+				return null;
+			}
 
 			// Check for '@' before the identifier
 			int atPos = nameStart - 1;
 			// Skip whitespace between @ and name
-			while (atPos >= 0 && Character.isWhitespace(text.charAt(atPos))) atPos--;
-			if (atPos < 0 || text.charAt(atPos) != '@') return null;
+			while (atPos >= 0 &&
+					Character.isWhitespace(text.charAt(atPos))) {
+				atPos--;
+			}
+			if (atPos < 0 || text.charAt(atPos) != '@') {
+				return null;
+			}
 
 			return text.substring(nameStart, nameEnd);
-		} catch (BadLocationException e) {
+		}
+		catch (BadLocationException e) {
 			return null;
 		}
 	}
