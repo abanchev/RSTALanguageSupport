@@ -46,6 +46,7 @@ import org.fife.rsta.ac.java.rjc.ast.TypeDeclaration;
 import org.fife.rsta.ac.java.rjc.lang.Type;
 import org.fife.rsta.ac.java.rjc.lang.TypeArgument;
 import org.fife.rsta.ac.java.rjc.lang.TypeParameter;
+import org.fife.ui.autocomplete.BasicCompletion;
 import org.fife.ui.autocomplete.Completion;
 import org.fife.ui.autocomplete.DefaultCompletionProvider;
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
@@ -523,6 +524,66 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		// Note: getAlreadyEnteredText() never returns null
 		String text = getAlreadyEnteredText(comp);
 
+		// Check for annotation parameter context: @Annotation(param|
+		String annotationClassName = getAnnotationClassName(comp);
+		if (annotationClassName != null && text.indexOf('.') == -1) {
+			ClassFile annotationCf = getClassFileFor(cu, annotationClassName);
+			if (annotationCf != null && (annotationCf.getAccessFlags() &
+					org.fife.rsta.ac.java.classreader.AccessFlags.ACC_ANNOTATION) != 0) {
+				// Add annotation element methods as completions
+				for (int mi = 0; mi < annotationCf.getMethodCount(); mi++) {
+					MethodInfo method = annotationCf.getMethodInfo(mi);
+					String name = method.getName();
+					// Skip synthetic methods and inherited Object/Annotation methods
+					if (name.startsWith("<") || name.equals("values") ||
+						name.equals("valueOf") || name.equals("hashCode") ||
+						name.equals("toString") || name.equals("annotationType") ||
+						name.equals("equals")) continue;
+					// Create a simple text completion for each annotation element
+					BasicCompletion bc = new BasicCompletion(this, name + "=");
+					bc.setShortDescription(method.getReturnTypeString(false));
+					// Build summary from source Javadoc if available
+					SourceLocation loc = getSourceLocForClass(annotationCf.getClassName(true));
+					if (loc != null) {
+						CompilationUnit annotCu = Util.getCompilationUnitFromDisk(loc, annotationCf);
+						if (annotCu != null) {
+							Iterator<TypeDeclaration> tdi = annotCu.getTypeDeclarationIterator();
+							while (tdi.hasNext()) {
+								TypeDeclaration td = tdi.next();
+								if (td.getName().equals(annotationCf.getClassName(false))) {
+									Iterator<Member> members = td.getMemberIterator();
+									while (members.hasNext()) {
+										Member m = members.next();
+										if (m instanceof Method && ((Method) m).getName().equals(name)) {
+											String doc = ((Method) m).getDocComment();
+											if (doc != null && doc.startsWith("/**")) {
+												bc.setSummary(Util.docCommentToHtml(doc));
+											}
+											break;
+										}
+									}
+									break;
+								}
+							}
+						}
+					}
+					set.add(bc);
+				}
+				// Return only annotation element completions
+				completions = new ArrayList<>(set);
+				Collections.sort(completions);
+				text = text.substring(text.lastIndexOf('.') + 1);
+				@SuppressWarnings("unchecked")
+				int startIdx = Collections.binarySearch(completions, text, comparator);
+				if (startIdx < 0) startIdx = -(startIdx + 1);
+				else { while (startIdx > 0 && comparator.compare(completions.get(startIdx-1), text) == 0) startIdx--; }
+				@SuppressWarnings("unchecked")
+				int endIdx = Collections.binarySearch(completions, text + '{', comparator);
+				endIdx = -(endIdx + 1);
+				return completions.subList(startIdx, endIdx);
+			}
+		}
+
 		// Special case - end of a String literal
 		boolean stringLiteralMember = checkStringLiteralMember(comp, text, cu,
 																set);
@@ -628,6 +689,58 @@ public SourceLocation getSourceLocForClass(String className) {
 			// ignore
 		}
 		return false;
+	}
+
+
+	/**
+	 * If the caret is inside an annotation's parentheses, returns the
+	 * annotation class name (simple name, to be resolved via imports).
+	 * Returns null if not in annotation parameter context.
+	 */
+	private String getAnnotationClassName(JTextComponent comp) {
+		try {
+			javax.swing.text.Document doc = comp.getDocument();
+			int caret = comp.getCaretPosition();
+			javax.swing.text.Element root = doc.getDefaultRootElement();
+			// Scan up to 3 lines back (annotation params may span lines)
+			int lineIdx = root.getElementIndex(caret);
+			int scanStart = root.getElement(Math.max(0, lineIdx - 3)).getStartOffset();
+			String text = doc.getText(scanStart, caret - scanStart);
+
+			// Find unmatched '(' scanning backward
+			int depth = 0;
+			int i = text.length() - 1;
+			int parenPos = -1;
+			while (i >= 0) {
+				char c = text.charAt(i);
+				if (c == ')') depth++;
+				else if (c == '(') {
+					if (depth == 0) { parenPos = i; break; }
+					depth--;
+				}
+				i--;
+			}
+			if (parenPos < 0) return null;
+
+			// Extract identifier before '('
+			int nameEnd = parenPos;
+			int nameStart = nameEnd - 1;
+			while (nameStart >= 0 && Character.isJavaIdentifierPart(text.charAt(nameStart))) {
+				nameStart--;
+			}
+			nameStart++;
+			if (nameStart >= nameEnd) return null;
+
+			// Check for '@' before the identifier
+			int atPos = nameStart - 1;
+			// Skip whitespace between @ and name
+			while (atPos >= 0 && Character.isWhitespace(text.charAt(atPos))) atPos--;
+			if (atPos < 0 || text.charAt(atPos) != '@') return null;
+
+			return text.substring(nameStart, nameEnd);
+		} catch (BadLocationException e) {
+			return null;
+		}
 	}
 
 
