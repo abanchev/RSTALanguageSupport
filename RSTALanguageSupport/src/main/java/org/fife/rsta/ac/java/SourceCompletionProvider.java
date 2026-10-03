@@ -91,6 +91,11 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 
 	//Shorthand completions (templates and comments)
 	private ShorthandCompletionCache shorthandCache;
+
+	/**
+	 * Filters and orders the completions for what the user has typed.
+	 */
+	private final CompletionRanker ranker = new CompletionRanker();
 	/**
 	 * Constructor.
 	 */
@@ -117,6 +122,13 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 
 	private void addCompletionsForStaticMembers(Set<Completion> set,
 						CompilationUnit cu, ClassFile cf, String pkg) {
+		addCompletionsForStaticMembers(set, cu, cf, pkg,
+				CompletionRanker.DEPTH_OWN);
+	}
+
+
+	private void addCompletionsForStaticMembers(Set<Completion> set,
+						CompilationUnit cu, ClassFile cf, String pkg, int depth) {
 
 		// Check us first, so if we override anything, we get the "newest"
 		// version.
@@ -125,7 +137,7 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			MethodInfo info = cf.getMethodInfo(i);
 			if (isAccessible(info, pkg) && info.isStatic()) {
 				MethodCompletion mc = new MethodCompletion(this, info);
-				set.add(mc);
+				addMember(set, mc, depth, info);
 			}
 		}
 
@@ -134,13 +146,13 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			FieldInfo info = cf.getFieldInfo(i);
 			if (isAccessible(info, pkg) && info.isStatic()) {
 				FieldCompletion fc = new FieldCompletion(this, info);
-				set.add(fc);
+				addMember(set, fc, depth, info);
 			}
 		}
 
 		ClassFile superClass = getClassFileFor(cu, cf.getSuperClassName(true));
 		if (superClass!=null) {
-			addCompletionsForStaticMembers(set, cu, superClass, pkg);
+			addCompletionsForStaticMembers(set, cu, superClass, pkg, depth+1);
 		}
 
 	}
@@ -163,6 +175,26 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 	private void addCompletionsForExtendedClass(Set<Completion> set,
 						CompilationUnit cu, ClassFile cf, String pkg,
 						Map<String, String> typeParamMap) {
+		addCompletionsForExtendedClass(set, cu, cf, pkg, typeParamMap,
+				CompletionRanker.DEPTH_OWN);
+	}
+
+
+	/**
+	 * Adds completions for accessible methods and fields of a class and its
+	 * super classes, recording how far up the hierarchy each member is
+	 * declared so that the receiver's own members rank first.
+	 *
+	 * @param depth The inheritance depth of <code>cf</code> relative to the
+	 *        receiver whose members are being completed.
+	 */
+	private void addCompletionsForExtendedClass(Set<Completion> set,
+						CompilationUnit cu, ClassFile cf, String pkg,
+						Map<String, String> typeParamMap, int depth) {
+
+		if (cf==null) {
+			return;
+		}
 
 		// Reset this class's type-arguments-to-type-parameters map, so that
 		// when methods and fields need to know type arguments, they can query
@@ -177,7 +209,7 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			// Don't show constructors
 			if (isAccessible(info, pkg) && !info.isConstructor()) {
 				MethodCompletion mc = new MethodCompletion(this, info);
-				set.add(mc);
+				addMember(set, mc, depth, info);
 			}
 		}
 
@@ -186,14 +218,15 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			FieldInfo info = cf.getFieldInfo(i);
 			if (isAccessible(info, pkg)) {
 				FieldCompletion fc = new FieldCompletion(this, info);
-				set.add(fc);
+				addMember(set, fc, depth, info);
 			}
 		}
 
 		// Add completions for any non-overridden super-class methods.
 		ClassFile superClass = getClassFileFor(cu, cf.getSuperClassName(true));
 		if (superClass!=null) {
-			addCompletionsForExtendedClass(set, cu, superClass, pkg, typeParamMap);
+			addCompletionsForExtendedClass(set, cu, superClass, pkg,
+					typeParamMap, depth+1);
 		}
 
 		// Add completions for any interface methods, in case this class is
@@ -201,8 +234,9 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		// TODO: Do this only if "top-level" class is declared abstract
 		for (int i=0; i<cf.getImplementedInterfaceCount(); i++) {
 			String inter = cf.getImplementedInterfaceName(i, true);
-			cf = getClassFileFor(cu, inter);
-			addCompletionsForExtendedClass(set, cu, cf, pkg, typeParamMap);
+			ClassFile interCf = getClassFileFor(cu, inter);
+			addCompletionsForExtendedClass(set, cu, interCf, pkg, typeParamMap,
+					depth+1);
 		}
 
 	}
@@ -239,6 +273,41 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			}
 		}
 
+	}
+
+
+	/**
+	 * Adds a member completion read from a class file, recording its ranking
+	 * metadata.  If an equal completion (e.g. an override declared lower in
+	 * the hierarchy) is already present, that one is kept.
+	 *
+	 * @param set The set to add to.
+	 * @param c The completion.
+	 * @param depth The inheritance depth of the member's declaring class.
+	 * @param info The member.
+	 */
+	private void addMember(Set<Completion> set, Completion c, int depth,
+			MemberInfo info) {
+		if (set.add(c)) {
+			ranker.recordMember(c, depth, info.getAccessFlags());
+		}
+	}
+
+
+	/**
+	 * Adds a member completion declared in the source being edited,
+	 * recording its ranking metadata.
+	 *
+	 * @param set The set to add to.
+	 * @param c The completion.
+	 * @param member The member.
+	 */
+	private void addSourceMember(Set<Completion> set, Completion c,
+			Member member) {
+		if (set.add(c)) {
+			ranker.recordSourceMember(c, CompletionRanker.DEPTH_OWN,
+					member.getModifiers());
+		}
 	}
 
 
@@ -585,6 +654,17 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 	}
 
 
+	/**
+	 * Overridden to return the completions in the order
+	 * {@link CompletionRanker} ranks them; the default implementation
+	 * re-sorts them by relevance and name.
+	 */
+	@Override
+	public List<Completion> getCompletions(JTextComponent comp) {
+		return getCompletionsImpl(comp);
+	}
+
+
 	@Override
 	public List<Completion> getCompletionsAt(JTextComponent tc, Point p) {
 		getCompletionsImpl(tc); // Force loading of completions
@@ -600,6 +680,7 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		try {
 
 		completions = new ArrayList<>();//completions.clear();
+		ranker.clear();
 
 		CompilationUnit cu = javaProvider.getCompilationUnit();
 		if (cu==null) {
@@ -689,29 +770,33 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 		// displayed for all of our completions.
 		text = text.substring(text.lastIndexOf('.')+1);
 
-		@SuppressWarnings("unchecked")
-		int start = Collections.binarySearch(completions, text, comparator);
-		if (start<0) {
-			start = -(start+1);
-		}
-		else {
-			// There might be multiple entries with the same input text.
-			while (start>0 &&
-					comparator.compare(completions.get(start-1), text)==0) {
-				start--;
-			}
-		}
-
-		@SuppressWarnings("unchecked")
-		int end = Collections.binarySearch(completions, text+'{', comparator);
-		end = -(end+1);
-
-		return completions.subList(start, end);
+		// Filter (prefix, camel case, substring, fuzzy) and rank by
+		// relevance.  "completions" stays sorted by name, which
+		// getCompletionsAt() relies on.
+		final String cuPkg = cu.getPackageName();
+		return ranker.rank(completions, text,
+				new CompletionRanker.ProjectClassTest() {
+					@Override
+					public boolean isProjectClass(String className) {
+						return jarManager.isProjectClass(className) ||
+							(cuPkg!=null && cuPkg.equals(packageOf(className)));
+					}
+				});
 
 		} finally {
 			comp.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
 		}
 
+	}
+
+
+	/**
+	 * Returns the package of a fully qualified class name, or
+	 * <code>null</code> if it is in the default package.
+	 */
+	private static String packageOf(String className) {
+		int dot = className.lastIndexOf('.');
+		return dot>-1 ? className.substring(0, dot) : null;
 	}
 
 
@@ -1037,7 +1122,8 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			if (m instanceof Method) {
 				Method method = (Method)m;
 				if (prefix==null || THIS.equals(prefix)) {
-					retVal.add(new MethodCompletion(this, method));
+					addSourceMember(retVal, new MethodCompletion(this, method),
+							method);
 				}
 				if (caret>=method.getBodyStartOffset() && caret<method.getBodyEndOffset()) {
 					currentMethod = method;
@@ -1051,7 +1137,8 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 			else if (m instanceof Field) {
 				if (prefix==null || THIS.equals(prefix)) {
 					Field field = (Field)m;
-					retVal.add(new FieldCompletion(this, field));
+					addSourceMember(retVal, new FieldCompletion(this, field),
+							field);
 				}
 			}
 		}
@@ -1066,7 +1153,9 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 					String superClassName = extended.toString();
 					ClassFile cf = getClassFileFor(cu, superClassName);
 					if (cf!=null) {
-						addCompletionsForExtendedClass(retVal, cu, cf, pkg, null);
+						// Members the edited class inherits rank below its own.
+						addCompletionsForExtendedClass(retVal, cu, cf, pkg, null,
+								CompletionRanker.DEPTH_OWN+1);
 					}
 					else {
 						log("[DEBUG]: Couldn't find ClassFile for: " + superClassName);
