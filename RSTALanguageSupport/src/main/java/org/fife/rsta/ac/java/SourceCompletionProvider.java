@@ -668,14 +668,20 @@ public SourceLocation getSourceLocForClass(String className) {
 					// '.' when scanning backward (baz -> . -> )). In a cast
 					// like (Type)var., ')' follows identifier chars
 					// (var -> )). Only skip parens for method calls.
-					if (!lastWasDot) break;
+					if (!lastWasDot) {
+						break;
+					}
 					// Skip balanced parens
 					int depth = 1;
 					i--;
 					while (i >= 0 && depth > 0) {
 						c = lineText.charAt(i);
-						if (c == ')') depth++;
-						else if (c == '(') depth--;
+						if (c == ')') {
+							depth++;
+						}
+						else if (c == '(') {
+							depth--;
+						}
 						i--;
 					}
 					lastWasDot = false;
@@ -889,8 +895,12 @@ public SourceLocation getSourceLocForClass(String className) {
 		int segStart = 0;
 		for (int i = 0; i < prefix.length(); i++) {
 			char c = prefix.charAt(i);
-			if (c == '(') depth++;
-			else if (c == ')') depth--;
+			if (c == '(') {
+				depth++;
+			}
+			else if (c == ')') {
+				depth--;
+			}
 			else if (c == '.' && depth == 0) {
 				segments.add(prefix.substring(segStart, i));
 				segStart = i + 1;
@@ -900,7 +910,11 @@ public SourceLocation getSourceLocForClass(String className) {
 			segments.add(prefix.substring(segStart));
 		}
 
-		if (segments.isEmpty()) return null;
+		if (segments.isEmpty()) {
+
+			return null;
+
+		}
 
 		String pkg = cu.getPackageName();
 		String firstSeg = segments.get(0);
@@ -915,7 +929,7 @@ public SourceLocation getSourceLocForClass(String className) {
 		// Resolve first segment: could be local var, parameter, field, or class name
 
 		// 1. Check fields in enclosing type
-		for (Iterator<Member> j = td.getMemberIterator(); j.hasNext(); ) {
+		for (Iterator<Member> j = td.getMemberIterator(); j.hasNext();) {
 			Member m = j.next();
 			if (m instanceof Field) {
 				Field field = (Field) m;
@@ -992,7 +1006,8 @@ public SourceLocation getSourceLocForClass(String className) {
 				int argCount = countArguments(seg.substring(parenIdx));
 				String returnType = findMethodReturnType(currentType, memberName, argCount, isStatic, pkg);
 				if (returnType == null || "void".equals(returnType)) {
-					log("[DEBUG]: Could not resolve method return type: " + memberName + " on " + currentType.getClassName(false));
+					log("[DEBUG]: Could not resolve method return type: " + memberName + " on " +
+							currentType.getClassName(false));
 					return null;
 				}
 				currentType = getClassFileFor(cu, returnType);
@@ -1001,7 +1016,8 @@ public SourceLocation getSourceLocForClass(String className) {
 				// Field access - find field and get type
 				String fieldType = findFieldType(currentType, memberName, isStatic, pkg);
 				if (fieldType == null) {
-					log("[DEBUG]: Could not resolve field type: " + memberName + " on " + currentType.getClassName(false));
+					log("[DEBUG]: Could not resolve field type: " + memberName + " on " +
+							currentType.getClassName(false));
 					return null;
 				}
 				currentType = getClassFileFor(cu, fieldType);
@@ -1069,9 +1085,15 @@ public SourceLocation getSourceLocForClass(String className) {
 		int depth = 0;
 		for (int i = 0; i < inner.length(); i++) {
 			char c = inner.charAt(i);
-			if (c == '(') depth++;
-			else if (c == ')') depth--;
-			else if (c == ',' && depth == 0) count++;
+			if (c == '(') {
+				depth++;
+			}
+			else if (c == ')') {
+				depth--;
+			}
+			else if (c == ',' && depth == 0) {
+				count++;
+			}
 		}
 		return count;
 	}
@@ -1144,7 +1166,9 @@ public SourceLocation getSourceLocForClass(String className) {
 			CodeBlock child = block.getChildBlock(i);
 			if (child.containsOffset(offs)) {
 				ClassFile result = resolveLocalVarType(cu, child, varName, offs);
-				if (result != null) return result;
+				if (result != null) {
+					return result;
+				}
 			}
 		}
 		return null;
