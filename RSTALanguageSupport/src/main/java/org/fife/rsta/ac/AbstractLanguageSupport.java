@@ -17,6 +17,7 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.ListCellRenderer;
 import javax.swing.UIManager;
 
+import org.fife.ui.autocomplete.DescWindowVisibility;
 import org.fife.ui.autocomplete.AutoCompletion;
 import org.fife.ui.autocomplete.CompletionCellRenderer;
 import org.fife.ui.autocomplete.CompletionProvider;
@@ -103,7 +104,7 @@ public abstract class AbstractLanguageSupport implements LanguageSupport {
 		ac.setAutoActivationEnabled(isAutoActivationEnabled());
 		ac.setAutoActivationDelay(getAutoActivationDelay());
 		ac.setParameterAssistanceEnabled(isParameterAssistanceEnabled());
-		ac.setShowDescWindow(getShowDescWindow());
+		ac.setDescWindowVisibility(getShowDescWindow() ? DescWindowVisibility.ALWAYS : DescWindowVisibility.NEVER);
 		return ac;
 	}
 
@@ -275,7 +276,7 @@ public abstract class AbstractLanguageSupport implements LanguageSupport {
 		if (show!=showDescWindow) {
 			showDescWindow = show;
 			for (AutoCompletion ac : textAreaToAutoCompletion.values()) {
-				ac.setShowDescWindow(show);
+				ac.setDescWindowVisibility(show ? DescWindowVisibility.ALWAYS : DescWindowVisibility.NEVER);
 			}
 		}
 	}

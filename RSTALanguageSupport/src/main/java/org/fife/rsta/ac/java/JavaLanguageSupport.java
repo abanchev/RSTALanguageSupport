@@ -36,6 +36,7 @@ import org.fife.rsta.ac.java.rjc.ast.CompilationUnit;
 import org.fife.rsta.ac.java.rjc.ast.ImportDeclaration;
 import org.fife.rsta.ac.java.rjc.ast.Package;
 import org.fife.rsta.ac.java.tree.JavaOutlineTree;
+import org.fife.ui.autocomplete.DescWindowVisibility;
 import org.fife.ui.autocomplete.AutoCompletion;
 import org.fife.ui.autocomplete.Completion;
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
@@ -143,7 +144,7 @@ public class JavaLanguageSupport extends AbstractLanguageSupport {
 		ac.setExternalURLHandler(new JavadocUrlHandler());
 		ac.setParameterAssistanceEnabled(isParameterAssistanceEnabled());
 		ac.setParamChoicesRenderer(new JavaParamListCellRenderer());
-		ac.setShowDescWindow(getShowDescWindow());
+		ac.setDescWindowVisibility(getShowDescWindow() ? DescWindowVisibility.ALWAYS : DescWindowVisibility.NEVER);
 		ac.install(textArea);
 		installImpl(textArea, ac);
 

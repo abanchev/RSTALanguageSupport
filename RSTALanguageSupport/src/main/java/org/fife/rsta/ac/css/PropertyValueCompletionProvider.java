@@ -341,9 +341,9 @@ public class PropertyValueCompletionProvider extends CompletionProviderBase {
 
 
 	@Override
-	public boolean isAutoActivateOkay(JTextComponent tc) {
+	public boolean isAutoActivateOkay(JTextComponent tc, int ch) {
 
-		boolean ok = super.isAutoActivateOkay(tc);
+		boolean ok = super.isAutoActivateOkay(tc, ch);
 
 		// In our constructor, we set up auto-activation of the completion
 		// popup to occur on space chars.  This extra check makes it a little

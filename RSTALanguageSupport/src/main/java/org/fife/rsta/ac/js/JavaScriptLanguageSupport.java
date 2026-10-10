@@ -38,6 +38,7 @@ import org.fife.rsta.ac.java.buildpath.ClasspathSourceLocation;
 import org.fife.rsta.ac.java.buildpath.LibraryInfo;
 import org.fife.rsta.ac.js.completion.JavaScriptShorthandCompletion;
 import org.fife.rsta.ac.js.tree.JavaScriptOutlineTree;
+import org.fife.ui.autocomplete.DescWindowVisibility;
 import org.fife.ui.autocomplete.AutoCompletion;
 import org.fife.ui.autocomplete.Completion;
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
@@ -281,7 +282,7 @@ return defaultValue;
 		ac.setAutoActivationDelay(getAutoActivationDelay());
 		ac.setParameterAssistanceEnabled(isParameterAssistanceEnabled());
 		ac.setExternalURLHandler(new JavaScriptDocUrlHandler(this));
-		ac.setShowDescWindow(getShowDescWindow());
+		ac.setDescWindowVisibility(getShowDescWindow() ? DescWindowVisibility.ALWAYS : DescWindowVisibility.NEVER);
 		ac.install(textArea);
 		installImpl(textArea, ac);
 

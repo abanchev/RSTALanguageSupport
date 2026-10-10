@@ -429,22 +429,22 @@ if (t!=null && !t.isWhitespace()) {
 	 *
 	 * @param tc The text component.
 	 * @return Whether auto-activation is okay outside of markup.
-	 * @see #isAutoActivateOkay(JTextComponent)
+	 * @see #isAutoActivateOkay(JTextComponent, int)
 	 */
-	protected boolean isAutoActivateOkayOutsideOfMarkup(JTextComponent tc) {
-		return super.isAutoActivateOkay(tc);
+	protected boolean isAutoActivateOkayOutsideOfMarkup(JTextComponent tc, int ch) {
+		return super.isAutoActivateOkay(tc, ch);
 	}
 
 
 	/**
 	 * Overridden to ensure auto-activation only occurs in a markup tag.
 	 *
-	 * @see #isAutoActivateOkayOutsideOfMarkup(JTextComponent)
+	 * @see #isAutoActivateOkayOutsideOfMarkup(JTextComponent, int)
 	 */
 	@Override
-	public boolean isAutoActivateOkay(JTextComponent tc) {
+	public boolean isAutoActivateOkay(JTextComponent tc, int ch) {
 
-		boolean okay = super.isAutoActivateOkay(tc);
+		boolean okay = super.isAutoActivateOkay(tc, ch);
 
 		if (okay) {
 
