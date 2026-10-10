@@ -39,6 +39,7 @@ import org.fife.rsta.ac.java.tree.JavaOutlineTree;
 import org.fife.ui.autocomplete.DescWindowVisibility;
 import org.fife.ui.autocomplete.AutoCompletion;
 import org.fife.ui.autocomplete.Completion;
+import org.fife.ui.autocomplete.ParameterizedCompletion;
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 
@@ -530,11 +531,40 @@ public class JavaLanguageSupport extends AbstractLanguageSupport {
 			// Remember the pick so it ranks a little higher this session.
 			CompletionRanker.recordPick(c);
 
+			// Completing inside an identifier replaces the whole word, and an
+			// argument list already there is kept: the caret moves into it.
+			Document doc = textArea.getDocument();
+			int caret = textArea.getCaretPosition();
+			int tail = CallSiteCompletion.identifierTail(doc, caret);
+			int call = CallSiteCompletion.existingCall(doc, caret + tail);
+			boolean keepCall = call>=0 && c instanceof ParameterizedCompletion;
+			if ((tail>0 || keepCall) && importInfo==null) {
+				textArea.beginAtomicEdit();
+			}
+
 			try {
-				super.insertCompletion(c, typedParamListStartChar);
+				if (keepCall) {
+					// Only the identifier is replaced; a qualifier before it stays.
+					int start = caret - CallSiteCompletion.identifierHead(doc, caret);
+					String name = CallSiteCompletion.methodName(c.getReplacementText());
+					doc.remove(start, caret + tail - start);
+					doc.insertString(start, name, null);
+					hidePopupWindow();
+					int open = call - (caret + tail - start) + name.length();
+					CallSiteCompletion.selectFirstArgument(textArea, open);
+					SignatureTip.show(textArea, (ParameterizedCompletion)c, open);
+				}
+				else {
+					if (tail>0) {
+						doc.remove(caret, tail);
+					}
+					super.insertCompletion(c, typedParamListStartChar);
+				}
 				if (importInfo!=null) {
 					textArea.insert(importInfo.text, importInfo.offs);
 				}
+			} catch (BadLocationException ble) {
+				// Offsets come from the document itself.
 			} finally {
 				// Be safe and always pair beginAtomicEdit() and endAtomicEdit()
 				textArea.endAtomicEdit();
