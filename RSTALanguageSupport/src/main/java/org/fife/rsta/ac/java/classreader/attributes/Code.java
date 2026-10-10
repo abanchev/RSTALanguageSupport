@@ -294,6 +294,12 @@ public class Code extends AttributeInfo {
 			Util.skipBytes(in, attributeLength);
 		}
 
+		// CLDC preverified classes (the J2ME device API) carry the older
+		// StackMap attribute; it is as irrelevant here as StackMapTable.
+		else if ("StackMap".equals(attrName)) {
+			Util.skipBytes(in, attributeLength);
+		}
+
 		else {
 			LOG.log(System.Logger.Level.INFO, "Unsupported Code attribute: " +
 				attrName);

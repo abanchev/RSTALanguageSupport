@@ -665,17 +665,37 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 	}
 
 
+	/**
+	 * Hover tool tips ask on every mouse rest: the list is rebuilt only when
+	 * the text or the caret changed since, and without the wait cursor, so the
+	 * pointer does not flicker.
+	 */
 	@Override
 	public List<Completion> getCompletionsAt(JTextComponent tc, Point p) {
-		getCompletionsImpl(tc); // Force loading of completions
+		String state = tc.getDocument().getLength() + ":" + tc.getCaretPosition() + ":" +
+				System.identityHashCode(javaProvider.getCompilationUnit());
+		if (completions==null || !state.equals(hoverState)) {
+			quiet = true;
+			try {
+				getCompletionsImpl(tc); // Force loading of completions
+			} finally {
+				quiet = false;
+			}
+			hoverState = state;
+		}
 		return super.getCompletionsAt(tc, p);
 	}
+
+	private boolean quiet;
+	private String hoverState;
 
 
 	@Override
 	protected List<Completion> getCompletionsImpl(JTextComponent comp) {
 
-		comp.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+		if (!quiet) {
+			comp.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+		}
 
 		try {
 
@@ -784,7 +804,9 @@ class SourceCompletionProvider extends DefaultCompletionProvider {
 				});
 
 		} finally {
-			comp.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+			if (!quiet) {
+				comp.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+			}
 		}
 
 	}
